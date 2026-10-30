@@ -1,0 +1,551 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Escapa del Lobo</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #172554;
+  color: white;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+header { padding: 12px; }
+h1 { margin: 5px; color: #fde047; }
+p { margin: 5px; }
+.game-box {
+  width: min(960px, 96vw);
+  margin: auto;
+  background: #7dd3fc;
+  border: 5px solid white;
+  border-radius: 14px;
+  overflow: hidden;
+}
+canvas {
+  display: block;
+  width: 100%;
+  background: #7dd3fc;
+  touch-action: manipulation;
+}
+.info {
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  font-size: 18px;
+}
+button {
+  border: 0;
+  border-radius: 14px;
+  padding: 16px 28px;
+  margin: 8px;
+  font-size: 20px;
+  font-weight: bold;
+  background: #facc15;
+  color: #422006;
+  cursor: pointer;
+  box-shadow: 0 4px #a16207;
+}
+button:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px #a16207;
+}
+#jump { background: #4ade80; box-shadow: 0 4px #15803d; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>¡ESCAPA DEL LOBO!</h1>
+  <p>Ayudá al cerdito a llegar a la meta.</p>
+  <p>Hacé clic o tocá el botón para saltar los obstáculos.</p>
+</header>
+
+<div class="game-box">
+  <canvas id="game" width="960" height="430"></canvas>
+</div>
+
+<div class="info">
+  <span id="distance">Distancia: 0 / 600 m</span>
+  <span id="stars">Estrellas: 0</span>
+  <span id="lives">Vidas: 3</span>
+</div>
+
+<button id="jump">¡SALTAR!</button>
+<button id="restart">VOLVER A JUGAR</button>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const W = canvas.width;
+const H = canvas.height;
+const ground = 350;
+const finishDistance = 600;
+
+let pig, obstacles, stars, distance, collected, lives;
+let speed, spawnTimer, starTimer, gameOver, won;
+let lastTime = 0;
+let animation;
+
+function resetGame() {
+  pig = {
+    x: 130,
+    y: ground - 54,
+    w: 58,
+    h: 48,
+    vy: 0,
+    jumping: false,
+    invincible: 0
+  };
+
+  obstacles = [];
+  stars = [];
+  distance = 0;
+  collected = 0;
+  lives = 3;
+  speed = 5;
+  spawnTimer = 70;
+  starTimer = 110;
+  gameOver = false;
+  won = false;
+
+  updateInfo();
+}
+
+function updateInfo() {
+  document.getElementById("distance").textContent =
+    "Distancia: " + Math.floor(distance) + " / " + finishDistance + " m";
+  document.getElementById("stars").textContent =
+    "Estrellas: " + collected;
+  document.getElementById("lives").textContent =
+    "Vidas: " + lives;
+}
+
+function jump() {
+  if (gameOver || won) return;
+
+  if (!pig.jumping) {
+    pig.vy = -14;
+    pig.jumping = true;
+  }
+}
+
+canvas.addEventListener("pointerdown", jump);
+document.getElementById("jump").addEventListener("click", jump);
+document.getElementById("restart").addEventListener("click", () => {
+  resetGame();
+});
+
+window.addEventListener("keydown", e => {
+  if (e.code === "Space" || e.code === "ArrowUp") {
+    e.preventDefault();
+    jump();
+  }
+});
+
+function drawBackground() {
+  // Cielo
+  ctx.fillStyle = "#7dd3fc";
+  ctx.fillRect(0, 0, W, H);
+
+  // Sol
+  ctx.fillStyle = "#fde047";
+  ctx.beginPath();
+  ctx.arc(830, 75, 38, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Nubes
+  drawCloud(150, 75);
+  drawCloud(480, 110);
+
+  // Colinas
+  ctx.fillStyle = "#86efac";
+  ctx.beginPath();
+  ctx.moveTo(0, 300);
+  ctx.quadraticCurveTo(200, 180, 400, 300);
+  ctx.quadraticCurveTo(650, 170, 960, 300);
+  ctx.lineTo(960, 380);
+  ctx.lineTo(0, 380);
+  ctx.fill();
+
+  // Casas del fondo
+  drawHouse(650, 225, 0.8);
+  drawHouse(760, 245, 0.65);
+
+  // Suelo
+  ctx.fillStyle = "#65a30d";
+  ctx.fillRect(0, ground, W, H - ground);
+  ctx.fillStyle = "#854d0e";
+  ctx.fillRect(0, ground + 14, W, H - ground);
+
+  // Rayitas del suelo en movimiento
+  ctx.fillStyle = "#a3e635";
+  for (let x = 0; x < W; x += 55) {
+    let px = (x - (distance * 4) % 55 + 55) % W;
+    ctx.fillRect(px, ground + 5, 22, 4);
+  }
+}
+
+function drawCloud(x, y) {
+  ctx.fillStyle = "white";
+  ctx.beginPath();
+  ctx.arc(x, y, 20, 0, Math.PI * 2);
+  ctx.arc(x + 24, y - 10, 25, 0, Math.PI * 2);
+  ctx.arc(x + 48, y, 20, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawHouse(x, y, scale) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  ctx.fillStyle = "#fbbf24";
+  ctx.fillRect(0, 35, 85, 65);
+
+  ctx.fillStyle = "#b91c1c";
+  ctx.beginPath();
+  ctx.moveTo(-10, 38);
+  ctx.lineTo(42, 0);
+  ctx.lineTo(95, 38);
+  ctx.fill();
+
+  ctx.fillStyle = "#78350f";
+  ctx.fillRect(34, 65, 20, 35);
+
+  ctx.restore();
+}
+
+function drawPig() {
+  ctx.save();
+  ctx.translate(pig.x, pig.y);
+
+  if (pig.invincible > 0 && Math.floor(pig.invincible / 5) % 2 === 0) {
+    ctx.globalAlpha = 0.45;
+  }
+
+  // Patitas
+  ctx.fillStyle = "#db8ca0";
+  ctx.fillRect(10, 37, 11, 14);
+  ctx.fillRect(38, 37, 11, 14);
+
+  // Cuerpo
+  ctx.fillStyle = "#f9a8d4";
+  ctx.beginPath();
+  ctx.ellipse(29, 28, 29, 21, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Orejas
+  ctx.beginPath();
+  ctx.moveTo(8, 13);
+  ctx.lineTo(5, -3);
+  ctx.lineTo(21, 8);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(35, 9);
+  ctx.lineTo(48, -3);
+  ctx.lineTo(49, 16);
+  ctx.fill();
+
+  // Hocico
+  ctx.fillStyle = "#ec729e";
+  ctx.beginPath();
+  ctx.ellipse(49, 27, 13, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#831843";
+  ctx.beginPath();
+  ctx.arc(45, 27, 2.5, 0, Math.PI * 2);
+  ctx.arc(53, 27, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ojo
+  ctx.fillStyle = "#1f2937";
+  ctx.beginPath();
+  ctx.arc(31, 17, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Cola
+  ctx.strokeStyle = "#db8ca0";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(-2, 28, 7, 0, Math.PI * 1.6);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawObstacle(o) {
+  ctx.save();
+  ctx.translate(o.x, o.y);
+
+  if (o.type === "log") {
+    ctx.fillStyle = "#92400e";
+    ctx.fillRect(0, 10, o.w, o.h - 10);
+    ctx.fillStyle = "#b45309";
+    ctx.beginPath();
+    ctx.ellipse(5, 10, 9, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#78350f";
+    ctx.fillRect(15, 15, 5, 8);
+    ctx.fillRect(35, 15, 5, 8);
+  }
+
+  if (o.type === "rock") {
+    ctx.fillStyle = "#64748b";
+    ctx.beginPath();
+    ctx.moveTo(0, o.h);
+    ctx.lineTo(8, 12);
+    ctx.lineTo(25, 0);
+    ctx.lineTo(45, 10);
+    ctx.lineTo(o.w, o.h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillRect(16, 15, 8, 5);
+  }
+
+  if (o.type === "straw") {
+    ctx.fillStyle = "#eab308";
+    ctx.fillRect(0, 10, o.w, o.h - 10);
+    ctx.fillStyle = "#facc15";
+    for (let i = 5; i < o.w; i += 12) {
+      ctx.fillRect(i, 13, 4, o.h - 15);
+    }
+  }
+
+  if (o.type === "brick") {
+    ctx.fillStyle = "#b91c1c";
+    ctx.fillRect(0, 0, o.w, o.h);
+    ctx.strokeStyle = "#fca5a5";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, 0, o.w, o.h);
+    ctx.beginPath();
+    ctx.moveTo(0, o.h / 2);
+    ctx.lineTo(o.w, o.h / 2);
+    ctx.moveTo(o.w / 2, 0);
+    ctx.lineTo(o.w / 2, o.h / 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function spawnObstacle() {
+  const types = ["log", "rock", "straw", "brick"];
+  const type = types[Math.floor(Math.random() * types.length)];
+
+  let w = 48;
+  let h = 42;
+
+  if (type === "log") { w = 65; h = 42; }
+  if (type === "rock") { w = 48; h = 40; }
+  if (type === "straw") { w = 58; h = 45; }
+  if (type === "brick") { w = 48; h = 48; }
+
+  obstacles.push({
+    x: W + 20,
+    y: ground - h,
+    w,
+    h,
+    type,
+    passed: false
+  });
+}
+
+function spawnStar() {
+  stars.push({
+    x: W + 20,
+    y: ground - 100 - Math.random() * 80,
+    r: 13,
+    taken: false
+  });
+}
+
+function drawStar(x, y, r) {
+  ctx.fillStyle = "#facc15";
+  ctx.strokeStyle = "#ca8a04";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  for (let i = 0; i < 10; i++) {
+    const angle = -Math.PI / 2 + i * Math.PI / 5;
+    const radius = i % 2 === 0 ? r : r * 0.45;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+}
+
+function hit(a, b) {
+  return (
+    a.x + 9 < b.x + b.w &&
+    a.x + a.w - 8 > b.x &&
+    a.y + 8 < b.y + b.h &&
+    a.y + a.h - 5 > b.y
+  );
+}
+
+function drawWolf() {
+  const x = 20;
+  const y = ground - 52;
+
+  ctx.fillStyle = "#475569";
+  ctx.beginPath();
+  ctx.ellipse(x + 30, y + 30, 30, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(x + 52, y + 15, 17, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#334155";
+  ctx.beginPath();
+  ctx.moveTo(x + 42, y + 3);
+  ctx.lineTo(x + 43, y - 13);
+  ctx.lineTo(x + 54, y + 1);
+  ctx.fill();
+
+  ctx.fillStyle = "#f8fafc";
+  ctx.beginPath();
+  ctx.arc(x + 57, y + 12, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#111827";
+  ctx.beginPath();
+  ctx.arc(x + 58, y + 12, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawMessage(title, subtitle) {
+  ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fde047";
+  ctx.font = "bold 48px Arial";
+  ctx.fillText(title, W / 2, 180);
+
+  ctx.fillStyle = "white";
+  ctx.font = "bold 25px Arial";
+  ctx.fillText(subtitle, W / 2, 230);
+
+  ctx.font = "20px Arial";
+  ctx.fillText("Tocá VOLVER A JUGAR para intentarlo otra vez", W / 2, 280);
+}
+
+function update(dt) {
+  if (gameOver || won) return;
+
+  const step = dt / 16.67;
+
+  distance += 0.12 * step;
+  speed = 5 + Math.min(distance / 150, 3);
+
+  pig.vy += 0.7 * step;
+  pig.y += pig.vy * step;
+
+  if (pig.y >= ground - pig.h) {
+    pig.y = ground - pig.h;
+    pig.vy = 0;
+    pig.jumping = false;
+  }
+
+  if (pig.invincible > 0) {
+    pig.invincible -= step;
+  }
+
+  spawnTimer -= step;
+  if (spawnTimer <= 0) {
+    spawnObstacle();
+    spawnTimer = 75 + Math.random() * 45;
+  }
+
+  starTimer -= step;
+  if (starTimer <= 0) {
+    spawnStar();
+    starTimer = 110 + Math.random() * 70;
+  }
+
+  obstacles.forEach(o => {
+    o.x -= speed * step;
+
+    if (!o.passed && hit(pig, o)) {
+      o.passed = true;
+
+      if (pig.invincible <= 0) {
+        lives--;
+        pig.invincible = 80;
+        updateInfo();
+
+        if (lives <= 0) gameOver = true;
+      }
+    }
+  });
+
+  stars.forEach(s => {
+    s.x -= speed * step;
+
+    const dx = pig.x + pig.w / 2 - s.x;
+    const dy = pig.y + pig.h / 2 - s.y;
+
+    if (!s.taken && Math.sqrt(dx * dx + dy * dy) < 35) {
+      s.taken = true;
+      collected++;
+      updateInfo();
+    }
+  });
+
+  obstacles = obstacles.filter(o => o.x + o.w > -20);
+  stars = stars.filter(s => s.x > -30 && !s.taken);
+
+  if (distance >= finishDistance) {
+    won = true;
+  }
+
+  updateInfo();
+}
+
+function draw() {
+  drawBackground();
+  drawWolf();
+
+  stars.forEach(s => drawStar(s.x, s.y, s.r));
+  obstacles.forEach(drawObstacle);
+
+  drawPig();
+
+  if (won) {
+    drawMessage("¡GANASTE!", "¡El cerdito llegó a salvo!");
+  } else if (gameOver) {
+    drawMessage("¡FIN DEL JUEGO!", "¡Probemos otra vez!");
+  }
+}
+
+function loop(time) {
+  const dt = Math.min(time - (lastTime || time), 40);
+  lastTime = time;
+
+  update(dt);
+  draw();
+
+  animation = requestAnimationFrame(loop);
+}
+
+resetGame();
+loop(0);
+</script>
+</body>
+</html>
