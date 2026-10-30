@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Los Tres Chanchitos: ¡A correr!</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:linear-gradient(#79d8ff,#d9f5ff 58%,#77c95d 58%,#3c9b45);font-family:system-ui,Arial,sans-serif;color:#20304b;display:flex;justify-content:center;padding:14px}
+main{width:min(100%,900px);text-align:center}
+h1{margin:3px 0;color:#ffcf40;text-shadow:0 3px #9a4b22,0 5px 0 #fff;font-size:clamp(1.7rem,5vw,2.7rem)}
+.sub{margin:0 0 10px;font-weight:700}
+.hud{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin:10px}
+.pill{background:#fff;border:2px solid #4c7b9c;border-radius:14px;padding:7px 13px;font-weight:900;box-shadow:0 3px #315875}
+#score{color:#d77a00}#lives{letter-spacing:3px}
+.frame{position:relative;background:#5db7e9;border:5px solid #fff;border-radius:18px;padding:6px;box-shadow:0 8px 0 #367c9c,0 12px 25px #24536b55}
+canvas{display:block;width:100%;height:auto;border-radius:10px;touch-action:manipulation;cursor:pointer}
+#overlay{position:absolute;inset:6px;display:flex;align-items:center;justify-content:center;padding:15px;background:#102744aa;border-radius:10px}
+#overlay.hidden{display:none}
+.panel{max-width:440px;background:#fff8df;border:4px solid #ffbf36;border-radius:22px;padding:20px;box-shadow:0 7px #9a6326}
+.panel h2{color:#d85c36;margin:0 0 8px;font-size:clamp(1.5rem,5vw,2.2rem)}
+.panel p{font-weight:650;line-height:1.45}
+button{border:0;border-radius:16px;background:linear-gradient(#ffe77c,#ffb52e);color:#59320b;font-size:1.1rem;font-weight:1000;padding:13px 25px;box-shadow:0 5px #a96316;cursor:pointer;touch-action:manipulation}
+button:active{transform:translateY(3px);box-shadow:0 2px #a96316}
+.controls{display:flex;align-items:center;justify-content:center;gap:16px;margin:15px 0 4px;flex-wrap:wrap}
+#jump{min-width:180px;font-size:1.35rem;background:linear-gradient(#ffb5c8,#ff6e91);box-shadow:0 5px #a63859;color:#50172b}
+.help{font-size:.95rem;font-weight:700;margin:10px auto;max-width:680px}
+@media(max-width:480px){body{padding:8px}.frame{border-width:3px;padding:4px}.pill{font-size:.9rem;padding:6px 9px}.help{font-size:.85rem}}
+</style>
+</head>
+<body>
+<main>
+<h1>🐷 ¡LOS TRES CHANCHITOS A CORRER! 🐷</h1>
+<p class="sub">Una aventura arcade: ¡saltá y esquivá!</p>
+<div class="hud">
+ <div class="pill">⭐ PUNTOS: <span id="score">0</span></div>
+ <div class="pill">❤️ VIDAS: <span id="lives">🐷🐷🐷</span></div>
+ <div class="pill">🏁 DISTANCIA: <span id="distance">0</span> m</div>
+</div>
+<div class="frame">
+ <canvas id="game" width="800" height="420" aria-label="Juego de correr y saltar"></canvas>
+ <div id="overlay">
+  <div class="panel">
+   <h2 id="title">¡Preparados, chanchitos!</h2>
+   <p id="message">Los chanchitos corren por el camino. Ayudalos a saltar los troncos, piedras y fardos de paja. ¡Juntá estrellas y llegá a la meta!</p>
+   <button id="start">¡JUGAR!</button>
+  </div>
+ </div>
+</div>
+<div class="controls">
+ <button id="jump">⬆️ ¡SALTAR!</button>
+ <span>También podés hacer clic en el juego o tocar la pantalla.</span>
+</div>
+<p class="help">🖱️ Mouse: clic para saltar · ⌨️ Teclado: espacio o flecha ↑ · 📱 Celular: tocá ¡SALTAR!<br>¡No hace falta correr: los chanchitos avanzan solitos!</p>
+</main>
+<script>
+(()=>{
+const c=document.getElementById('game'),g=c.getContext('2d');
+const scoreEl=document.getElementById('score'),livesEl=document.getElementById('lives'),distEl=document.getElementById('distance');
+const overlay=document.getElementById('overlay'),title=document.getElementById('title'),message=document.getElementById('message'),start=document.getElementById('start');
+const W=c.width,H=c.height,ground=335;
+let running=false,ended=false,last=0,score=0,lives=3,distance=0,speed=4,spawn=0,items=[],obstacles=[],clouds=[];
+let pig={x:125,y:ground-48,w:48,h:48,vy:0,onGround:true,invuln:0};
+let audio;
+function beep(f=500,d=.1,type='square'){try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();let o=audio.createOscillator(),a=audio.createGain();o.type=type;o.frequency.value=f;a.gain.setValueAtTime(.045,audio.currentTime);a.gain.exponentialRampToValueAtTime(.001,audio.currentTime+d);o.connect(a);a.connect(audio.destination);o.start();o.stop(audio.currentTime+d)}catch(e){}}
+function hud(){scoreEl.textContent=score;livesEl.textContent='🐷'.repeat(lives)+'♡'.repeat(3-lives);distEl.textContent=Math.floor(distance/10)}
+function reset(){score=0;lives=3;distance=0;speed=4;spawn=0;items=[];obstacles=[];pig={x:125,y:ground-48,w:48,h:48,vy:0,onGround:true,invuln:0};running=true;ended=false;overlay.classList.add('hidden');hud()}
+function jump(){if(!running){if(!ended)reset();return}if(pig.onGround){pig.vy=-13.5;pig.onGround=false;beep(620,.09)}}
+function addObstacle(){let types=[['🪵',34,40],['🪨',38,34],['🌾',42,40],['🧱',40,42]];let t=types[Math.floor(Math.random()*types.length)];obstacles.push({x:W+20,y:ground-t[2],w:t[1],h:t[2],emoji:t[0],passed:false});if(Math.random()<.72)items.push({x:W+100+Math.random()*100,y:ground-100-Math.random()*65,taken:false})}
+function hit(a,b){return a.x+8<b.x+b.w-5&&a.x+a.w-8>b.x+5&&a.y+8<b.y+b.h-3&&a.y+a.h-4>b.y+3}
+function lose(){lives--;pig.invuln=1.4;beep(170,.25,'sawtooth');hud();if(lives<=0){finish(false)}else{pig.vy=-7}}
+function finish(win){running=false;ended=true;title.textContent=win?'¡LO LOGRASTE! 🏆':'¡FIN DEL JUEGO!';message.textContent=win?`¡Los chanchitos llegaron a salvo! Juntaste ${score} puntos. ¡Excelente trabajo!`:`¡Buen intento! Juntaste ${score} puntos. ¿Querés volver a correr?`;start.textContent='JUGAR OTRA VEZ';overlay.classList.remove('hidden');beep(win?880:130,.4,'triangle')}
+function update(dt){
+ if(!running)return;
+ let step=dt/16.67;distance+=speed*step;speed=Math.min(7,speed+.0009*dt);spawn-=dt;if(spawn<=0){addObstacle();spawn=1000+Math.random()*650}
+ pig.vy+=.68*step;pig.y+=pig.vy*step;if(pig.y>=ground-pig.h){pig.y=ground-pig.h;pig.vy=0;pig.onGround=true}
+ pig.invuln=Math.max(0,pig.invuln-dt/1000);
+ obstacles.forEach(o=>{o.x-=speed*step;if(hit(pig,o)&&pig.invuln<=0){o.x=-100;lose()}});
+ items.forEach(it=>{it.x-=speed*step;if(!it.taken&&Math.abs((pig.x+pig.w/2)-it.x)<28&&Math.abs((pig.y+pig.h/2)-it.y)<35){it.taken=true;score+=10;beep(800,.07);hud()}});
+ obstacles=obstacles.filter(o=>o.x>-70);items=items.filter(i=>i.x>-30&&!i.taken);
+ if(distance>=2500)finish(true);
+}
+function draw(){
+ g.clearRect(0,0,W,H);
+ // cielo y nubes
+ let sky=g.createLinearGradient(0,0,0,H);sky.addColorStop(0,'#64c8fa');sky.addColorStop(1,'#d7f6ff');g.fillStyle=sky;g.fillRect(0,0,W,H);
+ clouds.forEach(cl=>{cl.x-=.25;if(cl.x<-100)cl.x=W+60;g.fillStyle='#fff';g.beginPath();g.arc(cl.x,cl.y,19,0,7);g.arc(cl.x+22,cl.y-9,24,0,7);g.arc(cl.x+48,cl.y,18,0,7);g.fill()});
+ // colinas
+ g.fillStyle='#8cda75';g.beginPath();g.moveTo(0,ground);for(let x=0;x<=W;x+=40)g.lineTo(x,255+Math.sin((x+distance*.35)/85)*23);g.lineTo(W,ground);g.fill();
+ // casitas de fondo
+ for(let x=70-(distance*.25%260);x<W+180;x+=260){house(x,255,'#e9c66d');house(x+115,270,'#b97948')}
+ // suelo
+ g.fillStyle='#69b84f';g.fillRect(0,ground,W,H-ground);g.fillStyle='#398e3e';g.fillRect(0,ground+12,W,7);
+ for(let x=-(distance%50);x<W;x+=50){g.fillStyle='#b5e76d';g.fillRect(x,ground+29,25,5)}
+ // meta a distancia final
+ if(distance>2200){g.fillStyle='#fff';g.fillRect(690,180,6,155);g.fillStyle='#ff5b65';g.beginPath();g.moveTo(696,182);g.lineTo(760,197);g.lineTo(696,215);g.fill();g.font='bold 16px Arial';g.fillStyle='#fff';g.fillText('META',690,170)}
+ items.forEach(i=>{g.font='25px serif';g.textAlign='center';g.fillText('⭐',i.x,i.y)});
+ obstacles.forEach(o=>{g.font='38px serif';g.textAlign='center';g.textBaseline='bottom';g.fillText(o.emoji,o.x+o.w/2,ground+3)});
+ // chanchito con animación de patitas
+ if(!(pig.invuln>0&&Math.floor(Date.now()/100)%2===0)){
+  let bob=pig.onGround?Math.sin(Date.now()/75)*2:0,x=pig.x,y=pig.y+bob;
+  g.fillStyle='#f88eaa';g.beginPath();g.ellipse(x+24,y+26,22,20,0,0,7);g.fill();
+  g.beginPath();g.moveTo(x+7,y+13);g.lineTo(x+5,y-3);g.lineTo(x+19,y+8);g.fill();g.beginPath();g.moveTo(x+27,y+8);g.lineTo(x+40,y-3);g.lineTo(x+40,y+15);g.fill();
+  g.fillStyle='#ffc0d0';g.beginPath();g.ellipse(x+40,y+28,10,7,0,0,7);g.fill();
+  g.fillStyle='#44283b';g.beginPath();g.arc(x+28,y+17,2.5,0,7);g.fill();
+  g.fillStyle='#f06d8d';g.beginPath();g.arc(x+38,y+27,1.7,0,7);g.fill();
+  g.strokeStyle='#9e4b65';g.lineWidth=4;let leg=Math.sin(Date.now()/55)*5;g.beginPath();g.moveTo(x+15,y+40);g.lineTo(x+13+leg,y+48);g.moveTo(x+32,y+40);g.lineTo(x+34-leg,y+48);g.stroke();
+ }
+ // texto corto de ayuda dentro del escenario
+ g.fillStyle='#17334b';g.font='bold 15px Arial';g.textAlign='left';g.fillText('¡Saltá los obstáculos!',18,28);
+}
+function house(x,y,color){g.fillStyle=color;g.fillRect(x,y,62,54);g.fillStyle='#9e573d';g.beginPath();g.moveTo(x-8,y+3);g.lineTo(x+31,y-28);g.lineTo(x+70,y+3);g.fill();g.fillStyle='#6b4938';g.fillRect(x+25,y+27,15,27)}
+function frame(t){if(!last)last=t;let dt=Math.min(40,t-last);last=t;update(dt);draw();requestAnimationFrame(frame)}
+start.addEventListener('click',()=>{reset();beep(500,.1)});
+document.getElementById('jump').addEventListener('pointerdown',e=>{e.preventDefault();jump()});
+c.addEventListener('pointerdown',e=>{e.preventDefault();jump()});
+document.addEventListener('keydown',e=>{if([' ','ArrowUp','w','W'].includes(e.key)){e.preventDefault();jump()}});
+clouds=[{x:80,y:80},{x:330,y:120},{x:610,y:65}];hud();draw();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
